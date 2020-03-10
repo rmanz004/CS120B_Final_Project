@@ -1,4 +1,4 @@
-# Test file for "CS120B Final Project"
+# Test file for "CS120B_Final_Project"
 
 
 # commands.gdb provides the following functions for ease:
