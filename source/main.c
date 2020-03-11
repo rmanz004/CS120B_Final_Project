@@ -75,13 +75,7 @@ unsigned char loadScore() {
 	return eeprom_read_byte(0);
 }
 
-void saveScrollStack(unsigned int config){
-	eeprom_write_byte(1, config);
-}
 
-unsigned char loadScrollStack() {
-	return eeprom_read_byte(1);
-}
 //End EEPROM Functions
 //===============================================
 
@@ -135,8 +129,8 @@ int isUp() {
 	return 0;
 }
 
-int currPlayerStackLED = 0b0011000011000111;
-int scrollStackLED = 0b1100000011000011;
+int currPlayerStackLED;
+int scrollStackLED;
 
 int shiftleft;
 int shiftright;
@@ -149,8 +143,10 @@ int highestStreak;
 
 int stackLvl = 1;
 
-char LCD_Menu[32] = "This Streak:     Best Streak: ";
+char LCD_Menu[32] = "This Streak:     Best Streak:   ";
 
+int incPeriod = 0;
+ 
 
 
 int isStacked(){
@@ -173,6 +169,23 @@ int isStacked(){
 		return 0;
 	}
 }
+
+void matrixStart(){
+	currPlayerStackLED = 0b0011000011000111;
+	scrollStackLED = 0b1100000011000011;
+	stackLvl = 1;
+	incPeriod = 0;
+}
+
+void matrixReset() {
+	while(!((~PINA & 0x08) == 0x08)){}
+	currPlayerStackLED = 0b0011000011000111;
+	scrollStackLED = 0b1100000011000011;
+	stackLvl = 1;
+	currStreak = 0;
+	incPeriod = 0;
+}
+
 enum stackScroller{ Init, Left, Right, Stack } state;
 int jscnt = 0; //for the delay in the joystick
 
@@ -188,22 +201,29 @@ void stack_scroller_tick(){
 				state = Right;
 				break;
 			}
-			else if (((~PINA & 0x04) == 0x04) && (isStacked() == 1)){
+			else if (((~PINA & 0x04) == 0x04) && (isStacked() == 1) && jscnt > 20){
 				stackLvl++;
 				currStreak++;
-				highestStreak++;
+				incPeriod = incPeriod + 2;
+				if (currStreak == highestStreak){
+					saveScore(highestStreak);
+					LCD_DisplayString(30, loadScore());
+					highestStreak++;
+				}
 				LCD_DisplayString(14, currStreak);
 				state = Stack;
 				break;
 			}
-			else if (((~PINA & 0x04) == 0x04) && (isStacked() == 0)){
-				currStreak = 0;
-				stackLvl = 1;
+			else if (((~PINA & 0x04) == 0x04) && (isStacked() == 0) && jscnt > 20){
+				matrixReset();
+				//output_led_state(currPlayerStackLED);
 				state = Init;
 				break;
 			}
-			else{
+			else if (((~PINA & 0x08) == 0x08) && jscnt > 20){
+				reset();
 				state = Init;
+				break;
 			}
 			break;
 			
@@ -228,10 +248,14 @@ void stack_scroller_tick(){
 				else if (stackLvl == 3){
 					currPlayerStackLED = shiftleft_player + 768;
 				}
-				output_led_state(currPlayerStackLED);
+				else if (stackLvl == 4){
+					matrixStart();
+					state = Init;
+					break;
+				}
+				//output_led_state(currPlayerStackLED);
 				jscnt = 0;
 				state = Init;
-				
 			}
 			break;
 		
@@ -256,7 +280,12 @@ void stack_scroller_tick(){
 				else if (stackLvl == 3){
 					currPlayerStackLED = shiftright_player + 768;
 				}
-				output_led_state(currPlayerStackLED);
+				else if (stackLvl == 4){
+					matrixStart();
+					state = Init;
+					break;
+				}
+				//output_led_state(currPlayerStackLED);
 				jscnt = 0;
 				state = Init;
 			}
@@ -268,8 +297,7 @@ void stack_scroller_tick(){
 			//currplayer =      0b0011000011000111
 			//scrolling stack = 0b1100000011000011
 			int playerStackTemp_stacking1 = currPlayerStackLED & 0x00FF;
-			
-			//int scrollingStackTemp_stacking1 = scrollStackLED & 0x00FF;
+			int scrollingStackTemp_stacking1 = scrollStackLED & 0x00FF;
 			//int playerStackTemp_stacking2 = currPlayerStackLED & 0xFF00;
 			//int scrollingStackTemp_stacking2 = scrollStackLED & 0xFF00;
 			
@@ -277,34 +305,37 @@ void stack_scroller_tick(){
 				jscnt = 0;
 				output_led_state(currPlayerStackLED);
 				state = Init;
+				break;
 			}
 			if(stackLvl == 2 && jscnt > 20){
 				scrollStackLED = currPlayerStackLED | scrollStackLED;
-				currPlayerStackLED = playerStackTemp_stacking1 + 3072;
+				currPlayerStackLED = ((playerStackTemp_stacking1 >> 1) | playerStackTemp_stacking1) + 3072;
 				jscnt = 0;
 				output_led_state(currPlayerStackLED);
 				state = Init;
+				break;
 			}
 			else if(stackLvl == 3 && jscnt > 20){
 				scrollStackLED = currPlayerStackLED | scrollStackLED;
-				currPlayerStackLED = playerStackTemp_stacking1 + 768;
+				currPlayerStackLED = ((playerStackTemp_stacking1 >> 1) | playerStackTemp_stacking1) + 768;
 				jscnt = 0;
 				output_led_state(currPlayerStackLED);
 				state = Init;
+				break;
 			}
 			else if(stackLvl == 4 && jscnt > 20){
-				scrollStackLED = currPlayerStackLED | scrollStackLED;
-				currPlayerStackLED = playerStackTemp_stacking1 + 768;
+				matrixStart();
 				jscnt = 0;
 				output_led_state(currPlayerStackLED);
 				state = Init;
+				break;
 			}
 			else {
 				jscnt = 0;
 				output_led_state(currPlayerStackLED);
 				state = Init;
+				break;
 			}
-			
 			break;
 		
 		default:
@@ -364,7 +395,7 @@ void scrolling_stack_tick(){
 		case RightScroll:
 
 			// || 0b0011000000011111  || 0b0000110000111111 
-			if(scrollStackLED == 0b1100000000001111){
+			if(scrollStackLED == 0b1100000000001111 || scrollStackLED == 0b1111000000011111 || scrollStackLED == 0b1111110000111111 ){
 				state2 = Init2;
 				LR_flag = 1;
 				break;
@@ -381,10 +412,15 @@ void scrolling_stack_tick(){
 						scrollStackLED = shiftleft + 49152;
 					}
 					else if (stackLvl == 2){
-						scrollStackLED = shiftleft + 12288;
+						scrollStackLED = shiftleft + 12288 + 49152;
 					}
 					else if(stackLvl == 3){
-						scrollStackLED = shiftleft + 3072;
+						scrollStackLED = shiftleft + 3072 + 12288 + 49152;
+					}
+					else if(stackLvl == 4){
+						matrixStart();
+						state2 = Init2;
+						break;
 					}
 					escnt = 0;	
 				
@@ -396,7 +432,7 @@ void scrolling_stack_tick(){
 		case LeftScroll:
 	
 			//|| 0b0011000011111000 || 0b0000110011111100
-			if(scrollStackLED == 0b1100000011110000){
+			if(scrollStackLED == 0b1100000011110000 || scrollStackLED == 0b1111000011111000 || scrollStackLED == 0b1111110011111100){
 				state2 = Init2;
 				LR_flag = 0;
 				break;
@@ -413,10 +449,15 @@ void scrolling_stack_tick(){
 					scrollStackLED = shiftright + 49152;
 				}
 				else if (stackLvl == 2){
-					scrollStackLED = shiftright + 12288;
+					scrollStackLED = shiftright + 12288 + 49152;
 				}
 				else if(stackLvl == 3){
-					scrollStackLED = shiftright + 3072;
+					scrollStackLED = shiftright + 3072 + 12288 + 49152;
+				}
+				else if(stackLvl == 4){
+					matrixStart();
+					state2 = Init2;
+					break;
 				}
 				escnt = 0;
 				
@@ -443,8 +484,12 @@ void scrolling_stack_tick(){
 
 void reset() {
 	while(!((~PINA & 0x08) == 0x08)){}
-	int currPlayerStackLED = 0b0010000011000111;
-	int scrollStackLED = 0b1100000011000011;
+	currPlayerStackLED = 0b0011000011000111;
+	scrollStackLED = 0b1100000011000011;
+	stackLvl = 1;
+	currStreak = 0;
+	highestStreak = 0;
+	saveScore(highestStreak);
 }
 
 
@@ -462,6 +507,8 @@ int main (void)
 	 
 	LCD_init();
 	LCD_DisplayString(1, LCD_Menu);
+	
+	matrixStart();
 	
 	state = Init;
 	state2 = Init2;
@@ -510,7 +557,7 @@ int main (void)
 				// Reset the elapsed time for next tick.
 				tasks[i]->elapsedTime = 0;
 			}
-			tasks[i]->elapsedTime += 1;
+			tasks[i]->elapsedTime = tasks[i]->elapsedTime + 1;
 		}
 		while(!TimerFlag);
 		TimerFlag = 0;
