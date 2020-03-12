@@ -12,6 +12,7 @@
 #include <avr/interrupt.h>
 #include <avr/eeprom.h>
 #include <stdlib.h>
+#include <string.h>
 #include <util/delay.h>
 
 #include <stdio.h>
@@ -67,12 +68,12 @@ void output_led_state(unsigned int __led_state)
 
 //EEPROM Functions
 //===============================================
-void saveScore(unsigned char score) {
-	eeprom_write_byte(0, score);
+void saveScore(unsigned int score) {
+	eeprom_write_byte((uint8_t*)10 , score);
 }
 
-unsigned char loadScore() {
-	return eeprom_read_byte(0);
+unsigned int loadScore() {
+	return eeprom_read_byte((uint8_t*)10);
 }
 
 
@@ -138,12 +139,23 @@ int shiftright;
 int shiftleft_player;
 int shiftright_player;
 
-int currStreak;
-int highestStreak;
+unsigned char currStreak = 0;
+unsigned char highestStreak = 0;
+uint8_t EEMEM highestStreakSave; 
+
+unsigned char buffer[1];
+unsigned char buffer2[1];
+
+unsigned char Character5[8] = { 0x04,0x04,0x04,0x04,0x15,0x0e,0x04,0x00 }; // Downward Arrow
+unsigned char Character6[8] = { 0x04,0x0e,0x15,0x04,0x04,0x04,0x04,0x00 }; // Upward Arrow
 
 int stackLvl = 1;
 
-char LCD_Menu[32] = "This Streak:     Best Streak:   ";
+int randVar;
+
+unsigned char LCD_Menu[32] = {'T', 'h', 'i', 's', ' ',  'S', 't', 'r', 'e', 'a', 'k', ':', ' ', ' ', ' ', ' ',    
+							  'B', 'e', 's', 't', ' ',  'S', 't', 'r', 'e', 'a', 'k', ':', ' ', ' ', ' ', ' '};
+							 
 
 int incPeriod = 0;
  
@@ -178,49 +190,73 @@ void matrixStart(){
 }
 
 void matrixReset() {
+	LCD_DisplayString(1, "Game Over,      Press 1 to reset");
 	while(!((~PINA & 0x08) == 0x08)){}
+	LCD_DisplayString(1, "Game Start,     Press 2 to stack");
 	currPlayerStackLED = 0b0011000011000111;
 	scrollStackLED = 0b1100000011000011;
 	stackLvl = 1;
 	currStreak = 0;
 	incPeriod = 0;
+	randVar = rand() % 1000;
 }
 
 enum stackScroller{ Init, Left, Right, Stack } state;
-int jscnt = 0; //for the delay in the joystick
+int joystickCnt = 0; //for the delay in the joystick
 
 void stack_scroller_tick(){ 
 	switch(state){
 		case Init:
-			++jscnt;
-			if(isLeft() && jscnt > 20){ 
+			++joystickCnt;
+			if(isLeft() && joystickCnt > 20){ 
 				state = Left;
 				break;
 			}
-			else if(isRight() && jscnt > 20){
+			else if(isRight() && joystickCnt > 20){
 				state = Right;
 				break;
 			}
-			else if (((~PINA & 0x04) == 0x04) && (isStacked() == 1) && jscnt > 20){
+			else if (((~PINA & 0x04) == 0x04) && (isStacked() == 1) && joystickCnt > 20){
 				stackLvl++;
+				if (currStreak == highestStreak){
+					highestStreak++;
+					eeprom_write_byte((uint8_t*)10 , highestStreak);
+					highestStreakSave = eeprom_read_byte((uint8_t*)10);
+					itoa(highestStreak, buffer2, 10);
+				}
+				/*
 				currStreak++;
 				incPeriod = incPeriod + 2;
-				if (currStreak == highestStreak){
-					saveScore(highestStreak);
-					LCD_DisplayString(30, loadScore());
-					highestStreak++;
-				}
-				LCD_DisplayString(14, currStreak);
+				itoa(currStreak, buffer, 10);
+				LCD_ClearScreen();
+				LCD_DisplayString(1, LCD_Menu);
+				LCD_Cursor(13);
+				LCD_WriteData(buffer);
+				LCD_Cursor(29);
+				LCD_WriteData(buffer2);
+				*/
 				state = Stack;
 				break;
 			}
-			else if (((~PINA & 0x04) == 0x04) && (isStacked() == 0) && jscnt > 20){
+			else if (((~PINA & 0x04) == 0x04) && (isStacked() == 0) && joystickCnt > 20){
 				matrixReset();
 				//output_led_state(currPlayerStackLED);
 				state = Init;
 				break;
 			}
-			else if (((~PINA & 0x08) == 0x08) && jscnt > 20){
+			else if (((~PINA & 0x08) == 0x08) && joystickCnt > 20){
+				reset();
+				state = Init;
+				break;
+			}
+			else if(!isLeft() && joystickCnt > 200){
+				joystickCnt = 0;
+				reset();
+				state = Init;
+				break;
+			}
+			else if(!isRight() && joystickCnt > 200){
+				joystickCnt = 0;
 				reset();
 				state = Init;
 				break;
@@ -228,12 +264,12 @@ void stack_scroller_tick(){
 			break;
 			
 		case Left:
-			jscnt++;
+			joystickCnt++;
 			if(currPlayerStackLED == 0b0011000011111000 || currPlayerStackLED == 0b0000110011111100 || currPlayerStackLED == 0b0000001111111110){
 				state = Init;
 				break;
 			}
-			else if(jscnt > 20){
+			else if(joystickCnt > 20){
 				//0b00110000 11000111
 				shiftleft_player = currPlayerStackLED & 0x00FF;
 				shiftleft_player = shiftleft_player >> 1;
@@ -254,18 +290,18 @@ void stack_scroller_tick(){
 					break;
 				}
 				//output_led_state(currPlayerStackLED);
-				jscnt = 0;
+				joystickCnt = 0;
 				state = Init;
 			}
 			break;
 		
 		case Right:
-			jscnt++;
+			joystickCnt++;
 			if(currPlayerStackLED == 0b0011000000011111 || currPlayerStackLED == 0b0000110000111111 || currPlayerStackLED == 0b0000001101111111 ){
 				state = Init;
 				break;
 			}
-			else if(jscnt > 20){
+			else if(joystickCnt > 20){
 				//0b00110000 11000111
 				shiftright_player = currPlayerStackLED & 0x00FF;
 				shiftright_player = shiftright_player << 1;
@@ -286,14 +322,14 @@ void stack_scroller_tick(){
 					break;
 				}
 				//output_led_state(currPlayerStackLED);
-				jscnt = 0;
+				joystickCnt = 0;
 				state = Init;
 			}
 			break;
 		
 		case Stack:
 		
-			++jscnt;
+			++joystickCnt;
 			//currplayer =      0b0011000011000111
 			//scrolling stack = 0b1100000011000011
 			int playerStackTemp_stacking1 = currPlayerStackLED & 0x00FF;
@@ -301,37 +337,37 @@ void stack_scroller_tick(){
 			//int playerStackTemp_stacking2 = currPlayerStackLED & 0xFF00;
 			//int scrollingStackTemp_stacking2 = scrollStackLED & 0xFF00;
 			
-			if(stackLvl == 1 && jscnt > 20){
-				jscnt = 0;
+			if(stackLvl == 1 && joystickCnt > 20){
+				joystickCnt = 0;
 				output_led_state(currPlayerStackLED);
 				state = Init;
 				break;
 			}
-			if(stackLvl == 2 && jscnt > 20){
+			if(stackLvl == 2 && joystickCnt > 20){
 				scrollStackLED = currPlayerStackLED | scrollStackLED;
 				currPlayerStackLED = ((playerStackTemp_stacking1 >> 1) | playerStackTemp_stacking1) + 3072;
-				jscnt = 0;
+				joystickCnt = 0;
 				output_led_state(currPlayerStackLED);
 				state = Init;
 				break;
 			}
-			else if(stackLvl == 3 && jscnt > 20){
+			else if(stackLvl == 3 && joystickCnt > 20){
 				scrollStackLED = currPlayerStackLED | scrollStackLED;
 				currPlayerStackLED = ((playerStackTemp_stacking1 >> 1) | playerStackTemp_stacking1) + 768;
-				jscnt = 0;
+				joystickCnt = 0;
 				output_led_state(currPlayerStackLED);
 				state = Init;
 				break;
 			}
-			else if(stackLvl == 4 && jscnt > 20){
+			else if(stackLvl == 4 && joystickCnt > 20){
 				matrixStart();
-				jscnt = 0;
+				joystickCnt = 0;
 				output_led_state(currPlayerStackLED);
 				state = Init;
 				break;
 			}
 			else {
-				jscnt = 0;
+				joystickCnt = 0;
 				output_led_state(currPlayerStackLED);
 				state = Init;
 				break;
@@ -370,18 +406,18 @@ void stack_scroller_tick(){
 
 enum scrollingStacker{Init2, LeftScroll, RightScroll}state2;
 
-int escnt = 0;
+int scrollCnt = 0;
 int LR_flag = 0;
 
 void scrolling_stack_tick(){
 	switch(state2){
 		case Init2:
 		
-			if (LR_flag == 0){
+			if (LR_flag == 0 && randVar < 25){
 				state2 = RightScroll;
 				break;
 			}
-			else if (LR_flag == 1){
+			else if (LR_flag == 1 && randVar < 25){
 				state2 = LeftScroll;
 				break;
 			}
@@ -401,8 +437,8 @@ void scrolling_stack_tick(){
 				break;
 			}
 			
-			escnt++;
-			if(escnt > 20){
+			scrollCnt++;
+			if(scrollCnt > 20){
 					//LEDs = 0b1100000011000011
 					shiftleft = scrollStackLED & 0x00FF;
 					shiftleft = shiftleft << 1;
@@ -422,7 +458,7 @@ void scrolling_stack_tick(){
 						state2 = Init2;
 						break;
 					}
-					escnt = 0;	
+					scrollCnt = 0;	
 				
 				
 		
@@ -438,8 +474,8 @@ void scrolling_stack_tick(){
 				break;
 			}
 			
-			escnt++;
-			if(escnt > 20){
+			scrollCnt++;
+			if(scrollCnt > 20){
 				//0b11000000 00001111
 				shiftright = scrollStackLED & 0x00FF;
 				shiftright = shiftright >> 1;
@@ -459,7 +495,7 @@ void scrolling_stack_tick(){
 					state2 = Init2;
 					break;
 				}
-				escnt = 0;
+				scrollCnt = 0;
 				
 			}
 			break;
@@ -488,8 +524,8 @@ void reset() {
 	scrollStackLED = 0b1100000011000011;
 	stackLvl = 1;
 	currStreak = 0;
-	highestStreak = 0;
 	saveScore(highestStreak);
+	randVar = rand() % 1000;
 }
 
 
@@ -506,15 +542,27 @@ int main (void)
 	ADC_init();
 	 
 	LCD_init();
+	LCD_ClearScreen();
+	/*
 	LCD_DisplayString(1, LCD_Menu);
+	LCD_Cursor(13);
+	LCD_WriteData('0');
+	LCD_Cursor(29);
+	//LCD_WriteData(eeprom_read_byte((uint8_t* ) 10));
+	unsigned char savedScore[1];
+	itoa(loadScore(), savedScore, 10);
+	LCD_WriteData(savedScore);
+	*/
+	LCD_DisplayString(1, "Game Start,     Press 2 to stack");
 	
+
 	matrixStart();
 	
 	state = Init;
 	state2 = Init2;
 	
 	unsigned long int Stack_Scroller_calc = 11;
-	unsigned long int Scrolling_Stacker_calc = 10;
+	unsigned long int Scrolling_Stacker_calc = 8;
 	
 	//Calculating GCD
 	unsigned long int GCD = 5;
@@ -545,10 +593,13 @@ int main (void)
 	
 	TimerSet(GCD);
 	TimerOn();
+	srand(time(NULL)); 
 	
 
 	while(1)
 	{
+		
+		randVar = rand() % 1000;
 		
 		for (unsigned short i = 0; i < numTasks; i++ ) {
 			if ( tasks[i]->elapsedTime == tasks[i]->period ) {
