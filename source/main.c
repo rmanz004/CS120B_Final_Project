@@ -151,6 +151,8 @@ unsigned char Character6[8] = { 0x04,0x0e,0x15,0x04,0x04,0x04,0x04,0x00 }; // Up
 
 int stackLvl = 1;
 
+int bestStreak;
+
 int randVar;
 
 unsigned char LCD_Menu[32] = {'T', 'h', 'i', 's', ' ',  'S', 't', 'r', 'e', 'a', 'k', ':', ' ', ' ', ' ', ' ',    
@@ -192,7 +194,21 @@ void matrixStart(){
 void matrixReset() {
 	LCD_DisplayString(1, "Game Over,      Press 1 to reset");
 	while(!((~PINA & 0x08) == 0x08)){}
-	LCD_DisplayString(1, "Game Start,     Press 2 to stack");
+	LCD_DisplayString(1, "Press 2 to stackStreak: ");
+	bestStreak = 0;
+	currPlayerStackLED = 0b0011000011000111;
+	scrollStackLED = 0b1100000011000011;
+	stackLvl = 1;
+	currStreak = 0;
+	incPeriod = 0;
+	randVar = rand() % 1000;
+}
+
+void matrixResetWin() {
+	LCD_DisplayString(1, "Game Won,       Press 1 to reset");
+	while(!((~PINA & 0x08) == 0x08)){}
+	LCD_DisplayString(1, "Press 2 to stackStreak: ");
+	bestStreak = 0;
 	currPlayerStackLED = 0b0011000011000111;
 	scrollStackLED = 0b1100000011000011;
 	stackLvl = 1;
@@ -251,13 +267,13 @@ void stack_scroller_tick(){
 			}
 			else if(!isLeft() && joystickCnt > 200){
 				joystickCnt = 0;
-				reset();
+				matrixReset();
 				state = Init;
 				break;
 			}
 			else if(!isRight() && joystickCnt > 200){
 				joystickCnt = 0;
-				reset();
+				matrixReset();
 				state = Init;
 				break;
 			}
@@ -361,6 +377,16 @@ void stack_scroller_tick(){
 			}
 			else if(stackLvl == 4 && joystickCnt > 20){
 				matrixStart();
+				bestStreak++;
+				if (bestStreak == 1){
+					LCD_DisplayString(1, "Press 2 to stackStreak: 1");
+				}
+				else if (bestStreak == 2){
+					LCD_DisplayString(1, "Press 2 to stackStreak: 2");
+				}
+				else if (bestStreak == 3){
+					matrixResetWin();
+				}
 				joystickCnt = 0;
 				output_led_state(currPlayerStackLED);
 				state = Init;
@@ -553,7 +579,7 @@ int main (void)
 	itoa(loadScore(), savedScore, 10);
 	LCD_WriteData(savedScore);
 	*/
-	LCD_DisplayString(1, "Game Start,     Press 2 to stack");
+	LCD_DisplayString(1, "Press 2 to stack Streak: ");
 	
 
 	matrixStart();
